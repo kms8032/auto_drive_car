@@ -169,3 +169,13 @@ def test_throttle_levels_validation(tmp_path):
     base["throttle"]["levels"] = [25, 40, 50, 60]
     p = tmp_path / "ok.yaml"; p.write_text(yaml.safe_dump(base), encoding="utf-8")
     assert load_config(p).throttle.levels == [25, 40, 50, 60]
+
+
+def test_record_toggle_refused_without_camera():
+    """카메라 없이 실행하면 녹화 토글을 눌러도 켜지지 않고, 꺼짐 알림으로 거절을 알린다."""
+    cfg = load_config(DEFAULT_CONFIG_PATH)
+    L = DriveLogic(cfg, requires_deadman=False, recording_enabled=False)
+    L.apply(E(K.RECORD_TOGGLE), 0)
+    assert L.state.recording is False and L.state.notifications == ["record_off"]
+    L.apply(E(K.THROTTLE_AXIS, 1.0), 1)
+    assert L.effective_speed > 0 and not L.should_save(10)   # 주행은 되고 저장은 안 된다

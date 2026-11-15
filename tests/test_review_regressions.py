@@ -198,3 +198,35 @@ def test_close_survives_broken_stdout(tmp_path, monkeypatch):
     col._print_status()                 # 예외 없이 지나가야 한다
     col.close()                         # 차량 정지·하드웨어 정리까지 도달해야 한다
     assert col.vehicle.state.speed == 0 and col.vehicle.calls[-1] == ("close",)
+
+
+def test_no_camera_drives_without_session_folder(tmp_path, monkeypatch):
+    """--no-camera: 카메라를 열지 않고, 세션 폴더도 만들지 않고, 차량은 움직인다."""
+    import collector.app as app_mod
+    cfg = load_config(DEFAULT_CONFIG_PATH)
+    cfg.recording.root = str(tmp_path / "dataset")
+
+    def must_not_open(cfg_, mock=False):
+        raise AssertionError("카메라를 열면 안 된다")
+    monkeypatch.setattr(app_mod, "create_camera", must_not_open)
+    monkeypatch.setattr(app_mod, "create_input", lambda cfg_, override: _Closable())
+    col = app_mod.Collector(cfg, mock=True, skip_checks=True, no_camera=True)
+    col.logic.apply(__import__("common.events", fromlist=["InputEvent"]).InputEvent(K.RECORD_TOGGLE), 0)
+    col.logic.apply(__import__("common.events", fromlist=["InputEvent"]).InputEvent(K.FORWARD_TOGGLE), 0)
+    col._step(1.0)
+    assert col.vehicle.state.speed > 0 and not col.logic.state.recording
+    col.close()
+    assert col.vehicle.state.speed == 0
+    assert not (tmp_path / "dataset").exists() or not any((tmp_path / "dataset").iterdir())
+
+
+def test_camera_failure_message_suggests_no_camera(tmp_path, monkeypatch):
+    import collector.app as app_mod
+    cfg = load_config(DEFAULT_CONFIG_PATH)
+    cfg.recording.root = str(tmp_path / "dataset")
+
+    def bad_camera(cfg_, mock=False):
+        raise RuntimeError("카메라를 열 수 없습니다: device=0")
+    monkeypatch.setattr(app_mod, "create_camera", bad_camera)
+    with pytest.raises(RuntimeError, match="--no-camera"):
+        app_mod.Collector(cfg, mock=True, skip_checks=True)

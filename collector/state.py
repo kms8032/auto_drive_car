@@ -37,10 +37,12 @@ class DriveState:
 
 
 class DriveLogic:
-    def __init__(self, cfg: Config, requires_deadman: bool):
+    def __init__(self, cfg: Config, requires_deadman: bool, recording_enabled: bool = True):
+        """recording_enabled=False: 카메라 없이 주행만 할 때. 녹화 토글을 무시하고 거절 알림만 보낸다."""
         self.cfg = cfg
         self.steering = SteeringModel(cfg.steering)
         self.requires_deadman = requires_deadman
+        self.recording_enabled = recording_enabled
         self.state = DriveState(
             angle=self.steering.center,
             keyboard_speed=self._snap_to_level(cfg.throttle.default_speed),
@@ -123,7 +125,8 @@ class DriveLogic:
             s.deadman_held = held
 
         elif k == EventKind.RECORD_TOGGLE:
-            s.recording = not s.recording
+            # 카메라 없이 실행 중이면 녹화를 켜지 않고 꺼짐 진동으로 거절을 알린다
+            s.recording = (not s.recording) and self.recording_enabled
             s.notifications.append("record_on" if s.recording else "record_off")
         elif k == EventKind.MARK:
             s.pending_mark = True

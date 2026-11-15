@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from typing import List, Optional
 
-from common.camera import BaseCamera, create_camera
+from common.camera import BaseCamera, NullCamera, create_camera
 from common.config import Config, config_snapshot
 from common.display import Display, DisplayState, create_display
 from common.hw import Vehicle, create_vehicle
@@ -89,12 +89,37 @@ def _safe_write(text: str) -> None:
         pass
 
 
+class _NullSession:
+    """카메라 없이 실행할 때의 세션 자리. 프레임이 없으니 빈 세션 폴더도 만들지 않는다."""
+    path = "(카메라 없음 — 저장 안 함)"
+    saved = 0
+    marks = 0
+    last_frame_name = None
+
+    def __init__(self):
+        self.counts: dict = {}
+
+    def log_event(self, *a, **kw) -> None:
+        pass
+
+    def mark(self, *a, **kw) -> None:
+        pass
+
+    def save_frame(self, *a, **kw) -> str:
+        return ""
+
+    def close(self) -> None:
+        pass
+
+
 class Collector:
     def __init__(self, cfg: Config, mock: bool = False, input_override: Optional[str] = None,
-                 skip_checks: bool = False, check_only: bool = False):
+                 skip_checks: bool = False, check_only: bool = False, no_camera: bool = False):
+        """no_camera: 카메라를 열지 않고 주행만 한다 (녹화 불가, 세션 폴더 없음). 서보·모터·패드 점검용."""
         self.cfg = cfg
         self.mock = mock
         self.check_only = check_only
+        self.no_camera = no_camera
         if mock:
             cfg.hardware.backend = "mock"
         # 입력 장치: 명시 지정 > (mock 이면 키보드) > 설정의 primary (실패 시 키보드 대체 가능)
@@ -112,19 +137,30 @@ class Collector:
         self._steering_range = (steering.min, steering.max)
         try:
             # 터미널 모드를 바꾸는 입력 장치는 마지막에 연다 — 앞 단계가 실패해도 터미널이 망가지지 않게
-            self.camera = create_camera(cfg.camera, mock=mock)
+            if no_camera:
+                self.camera = NullCamera()
+                log.warning("카메라 없이 실행: 녹화가 꺼져 있고 세션 폴더를 만들지 않습니다")
+            else:
+                try:
+                    self.camera = create_camera(cfg.camera, mock=mock)
+                except Exception as e:
+                    raise RuntimeError(f"{e} (카메라 없이 주행만 하려면 --no-camera 를 붙인다)") from e
             self.vehicle = create_vehicle(cfg.hardware, steering.center, (steering.min, steering.max))
             self.display = create_display(cfg.display, mock=mock)     # 못 열면 NullDisplay (주행은 계속)
             self.input = create_input(cfg.input, override)
-            self.logic = DriveLogic(cfg, requires_deadman=self.input.requires_deadman)
+            self.logic = DriveLogic(cfg, requires_deadman=self.input.requires_deadman,
+                                    recording_enabled=not no_camera)
             log.info("카메라 %s | 차량 %s | 표시 %s | 입력 %s", self.camera.props(), cfg.hardware.backend,
                      self.display.name, self.input.name)
             if check_only:
                 return
-            self.session = SessionWriter(
-                cfg.recording.root, config_snapshot(cfg), jpeg_quality=cfg.camera.jpeg_quality,
-                extra_meta={"input_device": self.input.name, "camera": self.camera.props(), "mock": mock},
-            )
+            if no_camera:
+                self.session = _NullSession()
+            else:
+                self.session = SessionWriter(
+                    cfg.recording.root, config_snapshot(cfg), jpeg_quality=cfg.camera.jpeg_quality,
+                    extra_meta={"input_device": self.input.name, "camera": self.camera.props(), "mock": mock},
+                )
         except Exception:
             self._release_resources()
             raise
@@ -273,11 +309,13 @@ class Collector:
             msg += f"\r\nSSH 가 끊겨도 계속 달립니다. 종료는 Options 버튼, 또는 다른 터미널에서  kill {os.getpid()}"
         else:
             msg = "키보드: ↑ 전진 ↓ 후진 | Space/T 정지 | ←→ 조향 S 중앙 | A/Z 속도 | R 녹화 | M 불량 표시 | [ ] 간격 | Q/ESC 종료"
+        if self.no_camera:
+            msg += "\r\n[카메라 없음] 주행만 합니다. 녹화 버튼은 동작하지 않고 아무것도 저장하지 않습니다."
         _safe_write(msg + "\r\n")
 
     def _print_status(self) -> None:
         logic, st, s = self.logic, self.logic.state, self.session
-        rec = "REC●" if st.recording else "----"
+        rec = "NOCAM" if self.no_camera else ("REC●" if st.recording else "----")
         dead = "" if not self.input.requires_deadman else (" L1" if st.deadman_held else " --")
         counts = " ".join(f"{a}:{s.counts.get(a, 0)}" for a in logic.steering.classes)
         bat = self.input.battery()

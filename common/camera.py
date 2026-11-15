@@ -151,5 +151,15 @@ class MockCamera(BaseCamera):
         return {"device": "mock", "width": self.cfg.width, "height": self.cfg.height, "fps": self.cfg.fps}
 
 
+class NullCamera(BaseCamera):
+    """카메라 없이 주행만 할 때 (collector --no-camera). 프레임을 주지 않는다."""
+
+    def read(self) -> Tuple[Optional[np.ndarray], float]:
+        return None, 0.0
+
+    def props(self) -> dict:
+        return {"device": None}
+
+
 def create_camera(cfg: CameraConfig, mock: bool = False) -> BaseCamera:
     return MockCamera(cfg) if mock else Camera(cfg)

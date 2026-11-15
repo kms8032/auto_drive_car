@@ -41,6 +41,7 @@ uv run pytest tests/test_state.py -k deadman
 uv run python -m collector --mock      # PC dry run: mock vehicle + synthetic camera + keyboard (needs a real tty)
 uv run python -m collector             # Jetson: DualShock 4; add --input keyboard for SSH keyboard
 uv run python -m collector --check     # Jetson: preflight (I2C bus, both PCA9685 boards) + open camera/input, then exit (servo centers once)
+uv run python -m collector --no-camera # drive without a camera: recording refused, no session folder (servo/motor/pad tests)
 uv run python -m collector --skip-checks -v   # bypass preflight (debugging only), debug log to dataset/collector.log
 uv run python scripts/pin_test.py scan|servo|motor|servo-all|servo-hold   # Jetson: I2C scan / actuator tests (wheels off the ground)
 uv run python scripts/dotmatrix_test.py [status|stress|off]              # Jetson: MAX7219 status display test

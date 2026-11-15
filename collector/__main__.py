@@ -16,6 +16,8 @@ def main(argv=None) -> int:
     p.add_argument("--skip-checks", action="store_true", help="시작 전 점검 생략 (디버깅용)")
     p.add_argument("--check", action="store_true",
                    help="점검만: 사전 점검 + 카메라·차량·입력 장치 초기화 후 종료 (서보가 중앙으로 움직이면 정상)")
+    p.add_argument("--no-camera", action="store_true",
+                   help="카메라 없이 주행만 (녹화 불가, 세션 폴더 없음). 서보·모터·패드 점검용")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
 
@@ -45,7 +47,7 @@ def main(argv=None) -> int:
     try:
         try:
             app = Collector(cfg, mock=args.mock, input_override=args.input, skip_checks=args.skip_checks,
-                            check_only=args.check)
+                            check_only=args.check, no_camera=args.no_camera)
         except PreflightError as e:
             print(f"[시작 불가] {e}", file=sys.stderr)
             return 3
@@ -55,7 +57,8 @@ def main(argv=None) -> int:
             return 4
         if args.check:
             app.close()
-            print("[점검 완료] 카메라·차량·입력 장치 초기화 성공. 세션 폴더는 만들지 않았습니다.")
+            what = "차량·입력 장치 (카메라는 --no-camera 로 건너뜀)" if args.no_camera else "카메라·차량·입력 장치"
+            print(f"[점검 완료] {what} 초기화 성공. 세션 폴더는 만들지 않았습니다.")
             return 0
         return app.run()
     finally:
