@@ -1,0 +1,58 @@
+[project]
+name = "course-autodrive"
+version = "0.1.0"
+description = "Lane-keeping RC car (Jetson Orin Nano) — collector / curator / trainer / inference"
+readme = "readme.md"
+requires-python = ">=3.10,<3.14"   # Jetson JetPack 6 = 3.10, PySide6/torch 휠은 3.13 까지
+# 모든 프로그램이 공통으로 쓰는 것. 플랫폼 조건은 마커로 건다: `uv run` 은 환경을 여기에 정확히 맞추므로
+# Jetson 에서 쓰는 것을 extra 로 빼 두면 옵션 없이 `uv run` 한 순간 지워진다 (2026-11-10 실제로 겪음).
+dependencies = [
+    "pyyaml>=6.0",
+    "numpy>=1.26; platform_machine != 'aarch64'",
+    "numpy>=1.24,<2; platform_machine == 'aarch64'",   # Jetson: 시스템 TensorRT/OpenCV 가 numpy 1.x 기준
+    "opencv-python>=4.9",
+    "evdev>=1.7; sys_platform == 'linux'",             # DualShock 4 입력 (Jetson). tensorrt/cuda 는 JetPack 시스템 패키지 → --system-site-packages
+]
+
+[project.optional-dependencies]
+# PC 전용: curator(PySide6), trainer(torch)
+pc = [
+    "PySide6>=6.7",
+    "pillow>=10.0",
+    "pandas>=2.0",
+    "torch>=2.7",
+    "torchvision>=0.22",
+    "onnx>=1.16",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+# ---------------------------------------------------------------------------
+# uv
+# ---------------------------------------------------------------------------
+[tool.uv]
+# 잠금 파일을 만들 때 고려할 환경: 개발 PC(Windows/x86-64 Linux)와 Jetson(aarch64 Linux)
+environments = [
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64'",
+]
+
+# torch CUDA 빌드는 PyPI 가 아니라 PyTorch 인덱스에서 받는다 (PC 전용. Jetson 은 torch 를 쓰지 않음)
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'win32' or (sys_platform == 'linux' and platform_machine == 'x86_64')" },
+]
+torchvision = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'win32' or (sys_platform == 'linux' and platform_machine == 'x86_64')" },
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
